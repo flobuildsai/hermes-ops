@@ -1,0 +1,49 @@
+name: rescale-hermes
+on:
+  workflow_dispatch:
+    inputs:
+      server_id:
+        description: Hetzner server id
+        required: true
+        default: "169390312"
+      server_type:
+        description: Target server type (e.g. cpx62)
+        required: true
+      upgrade_disk:
+        description: Also grow the disk (irreversible, blocks later downgrade)
+        required: true
+        default: "true"
+jobs:
+  rescale:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Rescale (shutdown -> change_type -> poweron)
+        env:
+          HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+          SID: ${{ inputs.server_id }}
+          TYPE: ${{ inputs.server_type }}
+          DISK: ${{ inputs.upgrade_disk }}
+        run: |
+          set -euo pipefail
+          api() { curl -sS -H "Authorization: Bearer $HCLOUD_TOKEN" -H "Content-Type: application/json" "$@"; }
+          wait_action() { # $1 = action id
+            for i in $(seq 1 240); do
+              st=$(api "https://api.hetzner.cloud/v1/actions/$1" | jq -r .action.status)
+              echo "action $1: $st"; [ "$st" = success ] && return 0; [ "$st" = error ] && return 1; sleep 5
+            done; return 1; }
+          status() { api "https://api.hetzner.cloud/v1/servers/$SID" | jq -r .server.status; }
+          echo "before: $(api https://api.hetzner.cloud/v1/servers/$SID | jq -r '.server.server_type.name + " " + .server.status')"
+          a=$(api -X POST "https://api.hetzner.cloud/v1/servers/$SID/actions/shutdown" | jq -r .action.id); wait_action "$a" || true
+          for i in $(seq 1 36); do [ "$(status)" = off ] && break; sleep 5; done
+          if [ "$(status)" != off ]; then
+            echo "graceful shutdown timed out -> poweroff"
+            a=$(api -X POST "https://api.hetzner.cloud/v1/servers/$SID/actions/poweroff" | jq -r .action.id); wait_action "$a"
+          fi
+          body=$(jq -nc --arg t "$TYPE" --argjson d "$DISK" '{server_type:$t, upgrade_disk:$d}')
+          resp=$(api -X POST "https://api.hetzner.cloud/v1/servers/$SID/actions/change_type" -d "$body"); echo "$resp" | jq -c '.action // .error'
+          a=$(echo "$resp" | jq -r '.action.id // empty')
+          ok=1; if [ -n "$a" ]; then wait_action "$a" || ok=0; else ok=0; fi
+          a=$(api -X POST "https://api.hetzner.cloud/v1/servers/$SID/actions/poweron" | jq -r .action.id); wait_action "$a"
+          echo "after: $(api https://api.hetzner.cloud/v1/servers/$SID | jq -r '.server.server_type.name + " " + .server.status')"
+          [ "$ok" = 1 ]

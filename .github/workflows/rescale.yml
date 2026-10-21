@@ -18,6 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
+      - name: Grace period (lets Hermes finish its current reply)
+        run: sleep 90
       - name: Rescale (shutdown -> change_type -> poweron)
         env:
           HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}

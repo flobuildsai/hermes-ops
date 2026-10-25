@@ -37,6 +37,13 @@ def parse_skills(output):
     return found
 
 
+def declared_build_lane(card):
+    matches = re.findall(r'(?m)^AGENT_BUILD_CAPABLE:\s*(yes|no)\s*$', card.get('body') or '', re.I)
+    if len(matches) != 1:
+        return None
+    return matches[0].lower() == 'yes'
+
+
 def evaluate(card, *, repo, actual_remote, head, expected_head, installed_skills,
              auth_status, real_probe_ok, active_workers, heavy_workers, build_capable,
              target_profile=None):
@@ -57,7 +64,13 @@ def evaluate(card, *, repo, actual_remote, head, expected_head, installed_skills
         failures.append('provider_unavailable')
     if active_workers >= 3:
         failures.append('capacity_full')
-    if (build_capable or profile == 'af-builder') and heavy_workers >= 1:
+    effective_build = build_capable or profile == 'af-builder'
+    declared = declared_build_lane(card)
+    if declared is None:
+        failures.append('lane_unclassified')
+    elif declared != effective_build:
+        failures.append('lane_mismatch')
+    if effective_build and heavy_workers >= 1:
         failures.append('heavy_slot_busy')
     return failures
 
@@ -76,7 +89,8 @@ def inspect(card_id, *, profile, repo, pr, build_capable=False, run=command_outp
     model = card.get('model_override') or ''
     auth = provider_block(run(['hermes', 'auth', 'list']), provider)
     active = [item for item in cards if item['status'] == 'running' and item['id'] != card_id]
-    heavy = sum(item.get('assignee') == 'af-builder' for item in active)
+    heavy = sum(item.get('assignee') == 'af-builder' or declared_build_lane(item) is not False
+                for item in active)
     failures = evaluate(card, repo=repo, actual_remote=actual_remote, head=head,
                         expected_head=expected, installed_skills=skills,
                         auth_status=auth, real_probe_ok=True, active_workers=len(active),

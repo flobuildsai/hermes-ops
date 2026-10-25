@@ -10,6 +10,7 @@ spec.loader.exec_module(m)
 
 CARD = {'id':'t_test', 'status':'ready', 'assignee':'af-reviewer',
         'workspace_kind':'dir', 'workspace_path':'/home/hermes/projects/hermes-ops-marketing',
+        'body':'AGENT_BUILD_CAPABLE: no\nRead-only review; no build.',
         'skills':['ai-crm-agent-company'], 'provider_override':'copilot', 'model_override':'gpt-4.1'}
 
 class Preflight(unittest.TestCase):
@@ -46,6 +47,32 @@ class Preflight(unittest.TestCase):
                               auth_status='copilot (1 credentials):\n #1 rate-limited usage_limit_reached (429)', real_probe_ok=False,
                               active_workers=1, heavy_workers=1, build_capable=False)
         self.assertIn('provider_unavailable', failures)
+
+    def test_lane_flag_must_match_card_contract(self):
+        failures=m.evaluate(CARD, repo='flobuildsai/hermes-ops', actual_remote='https://github.com/flobuildsai/hermes-ops.git',
+                              head='abc123', expected_head='abc123', installed_skills={'ai-crm-agent-company'},
+                              auth_status='copilot (1 credentials):\n #1 token api_key', real_probe_ok=True,
+                              active_workers=0, heavy_workers=0, build_capable=True)
+        self.assertIn('lane_mismatch',failures)
+
+    def test_non_builder_heavy_card_reserves_heavy_slot(self):
+        import json
+        target=dict(CARD, assignee=None, body='AGENT_BUILD_CAPABLE: yes\nBuilder scope.')
+        existing=dict(CARD, id='t_existing', status='running', assignee='af-reviewer',
+                      body='AGENT_BUILD_CAPABLE: yes\nEarlier heavy scope.')
+        def fake_run(command):
+            if command[-2:] == ['list','--json']: return json.dumps([target,existing])
+            if command[:2] == ['git','-C'] and command[-2:] == ['get-url','origin']:
+                return 'https://github.com/flobuildsai/hermes-ops.git'
+            if command[:2] == ['git','-C'] and command[-1] == 'HEAD': return 'abc123'
+            if command[:2] == ['gh','pr']: return json.dumps({'headRefOid':'abc123'})
+            if command[:3] == ['hermes','auth','list']: return 'copilot (1 credentials):\n #1 token api_key'
+            if 'skills' in command: return '│ ai-crm-agent-company │ enabled │'
+            if 'chat' in command: return 'OK'
+            raise AssertionError(command)
+        failures=m.inspect('t_test',profile='af-builder',repo='flobuildsai/hermes-ops',pr=3,
+                           build_capable=True,run=fake_run)
+        self.assertIn('heavy_slot_busy',failures)
 
     def test_missing_skill_and_full_capacity_stop_dispatch(self):
         failures=m.evaluate(CARD, repo='flobuildsai/hermes-ops', actual_remote='https://github.com/flobuildsai/hermes-ops.git',

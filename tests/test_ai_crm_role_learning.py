@@ -70,6 +70,20 @@ class Linear(unittest.TestCase):
         self.assertEqual(api.saved[0]['project'], m.PROJECT)
 
 class Integration(unittest.TestCase):
+    def test_no_args_is_safe_scheduled_run(self):
+        import json, sys, tempfile
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            catalog = root / 'roles.json'
+            catalog.write_text(json.dumps({'roles': ROLES}))
+            state = root / 'state.json'
+            state.write_text(json.dumps({'last_date': m.datetime.now(m.ZoneInfo('Europe/Berlin')).date().isoformat()}))
+            with patch.object(m, 'CATALOG', catalog), patch.object(m, 'STATE', state), \
+                 patch.object(m, 'call', lambda command: '[]'), \
+                 patch.object(sys, 'argv', ['ai_crm_role_learning.py']):
+                m.main()
+
     def test_run_orders_linear_before_card_and_readback(self):
         import tempfile, json, sys
         from unittest.mock import patch

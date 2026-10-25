@@ -96,7 +96,7 @@ def main():
     mode.add_argument('--run', action='store_true')
     parser.add_argument('--operator-run', action='store_true',
                         help='Advance one accepted role today; never set on cron')
-    args = parser.parse_args()
+    args = parser.parse_args(sys.argv[1:] or ['--run'])
     if args.operator_run and not args.run:
         parser.error('--operator-run requires --run')
     roles = json.loads(CATALOG.read_text())['roles']

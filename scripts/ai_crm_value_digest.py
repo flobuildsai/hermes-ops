@@ -87,7 +87,8 @@ def main():
         tmp = args.state_file.with_suffix('.tmp')
         tmp.write_text(json.dumps(current, sort_keys=True) + '\n')
         tmp.replace(args.state_file)
-    print(text)
+    if text != '[SILENT]':
+        print(text)
 
 
 if __name__ == '__main__':

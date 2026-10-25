@@ -54,5 +54,22 @@ class ValueDigest(unittest.TestCase):
         self.assertNotIn('grün', text)
         self.assertIn('nicht belegt', text)
 
+    def test_unchanged_tick_produces_empty_stdout(self):
+        import io
+        import json
+        import sys
+        import tempfile
+        from contextlib import redirect_stdout
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as d:
+            state = Path(d) / 'state.json'
+            state.write_text(json.dumps(self.current))
+            out = io.StringIO()
+            with patch.object(m, 'snapshot', return_value=self.current), \
+                 patch.object(sys, 'argv', ['digest', '--state-file', str(state)]), \
+                 redirect_stdout(out):
+                m.main()
+            self.assertEqual(out.getvalue(), '')
+
 if __name__ == '__main__':
     unittest.main()

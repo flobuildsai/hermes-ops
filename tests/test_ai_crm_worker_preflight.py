@@ -56,6 +56,14 @@ class Preflight(unittest.TestCase):
         self.assertIn('capacity_full', failures)
         self.assertIn('heavy_slot_busy', failures)
 
+    def test_builder_profile_cannot_decline_heavy_classification(self):
+        card=dict(CARD, assignee=None)
+        failures=m.evaluate(card, repo='flobuildsai/hermes-ops', actual_remote='https://github.com/flobuildsai/hermes-ops.git',
+                              head='abc123', expected_head='abc123', installed_skills={'ai-crm-agent-company'},
+                              auth_status='copilot (1 credentials):\n #1 gh auth token api_key', real_probe_ok=True,
+                              active_workers=1, heavy_workers=1, build_capable=False, target_profile='af-builder')
+        self.assertIn('heavy_slot_busy',failures)
+
     def test_parse_provider_block_and_enabled_skills(self):
         auth=('anthropic (1 credentials):\n #1 oauth\n\n'
               'copilot (1 credentials):\n #1 token api_key\n\n'
@@ -114,12 +122,29 @@ class Preflight(unittest.TestCase):
             raise AssertionError(command)
         self.assertIn('provider_unavailable',m.inspect('t_test',profile='af-reviewer',repo='flobuildsai/hermes-ops',pr=3,run=fake_run))
 
+    def test_probe_stderr_is_not_discarded(self):
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        response=SimpleNamespace(returncode=0,stdout='OK\n',stderr='Primary auth failed — switching to fallback')
+        with patch.object(m.subprocess,'run',return_value=response):
+            captured=m.command_output(['hermes','-p','af-reviewer','--provider','copilot','chat','-q','OK'])
+        self.assertIn('Primary auth failed',captured)
+
+    def test_cli_requires_explicit_build_lane(self):
+        import io
+        from contextlib import redirect_stderr
+        with redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as ctx:
+                m.main(['--card','t_test','--profile','af-reviewer','--repo','flobuildsai/hermes-ops','--pr','3'],
+                       inspect_fn=lambda *a,**k:[])
+        self.assertEqual(ctx.exception.code, 2)
+
     def test_cli_reports_stop_without_dispatch(self):
         import io
         from contextlib import redirect_stdout
         out=io.StringIO()
         with redirect_stdout(out):
-            rc=m.main(['--card','t_test','--profile','af-reviewer','--repo','flobuildsai/hermes-ops','--pr','3'],
+            rc=m.main(['--card','t_test','--profile','af-reviewer','--repo','flobuildsai/hermes-ops','--pr','3','--light-only'],
                       inspect_fn=lambda *a,**k:['wrong_repo_or_head'])
         self.assertEqual(rc,2)
         self.assertIn('STOP wrong_repo_or_head',out.getvalue())

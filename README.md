@@ -6,10 +6,14 @@ Ops workflows run from outside the Hermes server (e.g. Hetzner rescale).
 Create repo-bound Kanban cards **unassigned** with an exact `dir:` or worktree
 workspace and an explicit model/provider pin. Before assigning a profile, run
 `scripts/ai_crm_worker_preflight.py --card t_... --profile af-reviewer --repo
-flobuildsai/hermes-ops --pr 3`. It verifies the card and workspace, GitHub
+flobuildsai/hermes-ops --pr 3 --light-only`. For a build-capable card, pass
+`--build-capable` instead; lane classification is mandatory. It verifies the
+card and workspace, GitHub
 PR head, enabled profile skills, provider cooldown, available worker/build
-slots and a bounded **real** model response. A fallback answer is a failure,
-not a pass. A `PASS` is only permission to attempt assignment, never proof that
+slots and a bounded **real** model response. Probe warnings on stderr are
+included: a fallback answer is a failure, not a pass. `af-builder` is always
+classified as heavy even if an operator mislabels the card. A `PASS` is only
+permission to attempt assignment, never proof that
 a Kanban worker ran, reviewed the right code, or shipped anything. Afterwards
 read back the actual run/log, artifact and independent QA.
 

@@ -16,6 +16,8 @@ def command_output(command):
     done = subprocess.run(command, capture_output=True, text=True, timeout=120, env=env)
     if done.returncode:
         raise RuntimeError(f'preflight command failed: {command[0]}')
+    if command[0] == 'hermes' and 'chat' in command:
+        return (done.stdout + '\n' + done.stderr).strip()
     return done.stdout.strip()
 
 
@@ -55,7 +57,7 @@ def evaluate(card, *, repo, actual_remote, head, expected_head, installed_skills
         failures.append('provider_unavailable')
     if active_workers >= 3:
         failures.append('capacity_full')
-    if build_capable and heavy_workers >= 1:
+    if (build_capable or profile == 'af-builder') and heavy_workers >= 1:
         failures.append('heavy_slot_busy')
     return failures
 
@@ -101,7 +103,9 @@ def main(argv=None, inspect_fn=inspect):
     parser.add_argument('--profile', required=True)
     parser.add_argument('--repo', required=True)
     parser.add_argument('--pr', type=int, required=True)
-    parser.add_argument('--build-capable', action='store_true')
+    lane = parser.add_mutually_exclusive_group(required=True)
+    lane.add_argument('--build-capable', action='store_true')
+    lane.add_argument('--light-only', action='store_true')
     args = parser.parse_args(argv)
     try:
         failures = inspect_fn(args.card, profile=args.profile, repo=args.repo,

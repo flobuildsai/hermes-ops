@@ -22,7 +22,10 @@ def eligible_response(text):
         return None
     if not re.search(r'https://[^\s)]+', lines[1]):
         return None
-    if not re.search(r'\b(?:Ja|Freigabe)\b', lines[2], re.I):
+    gate = 'Kontakt nur nach Flos ausdrücklichem Ja.'
+    if not lines[2].endswith(gate):
+        return None
+    if re.search(r'\b(?:kein\w*|ohne)\b[^.;\n]{0,60}\b(?:ja|freigabe|kontakt|senden)\b|\bsofort\s+(?:senden|kontaktieren)\b', clean, re.I):
         return None
     return clean
 
@@ -31,14 +34,21 @@ def latest_eligible(paths, now):
     paths = sorted(paths)
     if not paths:
         return None
-    text = paths[-1].read_text()
-    run = re.search(r'^\*\*Run Time:\*\* (\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)', text, re.M)
-    if not run or '\n## Response\n' not in text:
+    try:
+        text = paths[-1].read_text(encoding='utf-8')
+    except (OSError, UnicodeError):
         return None
-    when = datetime.strptime(run.group(1), '%Y-%m-%d %H:%M:%S')
+    run = re.search(r'^\*\*Run Time:\*\* (\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)', text, re.M)
+    parts = text.split('\n## Response\n')
+    if not run or len(parts) != 2:
+        return None
+    try:
+        when = datetime.strptime(run.group(1), '%Y-%m-%d %H:%M:%S')
+    except ValueError:
+        return None
     if when.date() != now.date() or not timedelta(0) <= now - when <= timedelta(hours=6):
         return None
-    return eligible_response(text.rsplit('\n## Response\n', 1)[-1])
+    return eligible_response(parts[1])
 
 
 def fingerprint(text):

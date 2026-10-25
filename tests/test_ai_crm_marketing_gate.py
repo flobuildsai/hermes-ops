@@ -10,7 +10,7 @@ spec.loader.exec_module(m)
 
 GOOD = ('Move: Ein enger Audit der ungeklärten Refund-Zuordnung als Discovery-Hypothese.\n'
         'Beleg: https://example.org/buyer-post vom 25.10.2026, Ersthandbericht; Nachfrage unbewiesen.\n'
-        'Nächster Schritt/Gate: Frage als Entwurf an Flo; Kontakt nur nach seinem Ja.')
+        'Nächster Schritt/Gate: Frage als Entwurf an Flo; Kontakt nur nach Flos ausdrücklichem Ja.')
 
 class MarketingGate(unittest.TestCase):
     def test_valid_short_sourced_draft_passes(self):
@@ -26,7 +26,15 @@ class MarketingGate(unittest.TestCase):
 
     def test_requires_source_and_flo_gate(self):
         self.assertIsNone(m.eligible_response(GOOD.replace('https://example.org/buyer-post', 'nicht belegt')))
-        self.assertIsNone(m.eligible_response(GOOD.replace('Kontakt nur nach seinem Ja', 'Kontakt sofort')))
+        self.assertIsNone(m.eligible_response(GOOD.replace('Kontakt nur nach Flos ausdrücklichem Ja', 'Kontakt sofort')))
+
+    def test_negated_or_third_party_approval_is_rejected(self):
+        for variant in ('Kein Ja von Flo nötig, sofort senden',
+                        'Ohne Freigabe jetzt Leads kontaktieren',
+                        'Kontakt nur nach Zustimmung des Teams'):
+            self.assertIsNone(m.eligible_response(GOOD.replace('Kontakt nur nach Flos ausdrücklichem Ja', variant)))
+        self.assertIsNone(m.eligible_response(GOOD.replace('Frage als Entwurf an Flo;',
+            'Kein Ja von Flo nötig, sofort senden; Frage als Entwurf an Flo;')))
 
     def test_latest_real_run_today_only(self):
         from datetime import datetime
@@ -47,6 +55,26 @@ class MarketingGate(unittest.TestCase):
             old.write_text('**Run Time:** 2026-10-25 13:01:00\n## Response\n' + GOOD)
             new.write_text('**Run Time:** 2026-10-25 13:15:00\n## Response\n[SILENT]')
             self.assertIsNone(m.latest_eligible([old, new], datetime(2026, 10, 25, 13, 20)))
+
+    def test_ambiguous_response_boundary_fails_closed(self):
+        from datetime import datetime
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as d:
+            file = Path(d) / '2026-10-25_13-01-00.md'
+            for marker in ('[SILENT]', '[CRON_FAILURE]'):
+                file.write_text('**Run Time:** 2026-10-25 13:01:00\n## Response\n' + marker + '\n## Response\n' + GOOD)
+                self.assertIsNone(m.latest_eligible([file], datetime(2026, 10, 25, 13, 20)))
+
+    def test_damaged_output_is_silent_not_exception(self):
+        from datetime import datetime
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as d:
+            file = Path(d) / '2026-10-25_13-01-00.md'
+            file.write_bytes(b'\xff\xfe invalid utf8')
+            self.assertIsNone(m.latest_eligible([file], datetime(2026, 10, 25, 13, 20)))
+            file.write_text('**Run Time:** 2026-99-99 13:01:00\n## Response\n' + GOOD)
+            self.assertIsNone(m.latest_eligible([file], datetime(2026, 10, 25, 13, 20)))
+            self.assertIsNone(m.latest_eligible([], datetime(2026, 10, 25, 13, 20)))
 
     def test_identical_message_is_never_delivered_twice(self):
         key = m.fingerprint(GOOD)

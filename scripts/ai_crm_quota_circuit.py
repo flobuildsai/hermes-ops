@@ -53,8 +53,11 @@ def pool_exhausted(auth_text):
     match = re.search(r'^openai-codex \(\d+ credentials?\):\n(.*?)(?=\n\n|\Z)', auth_text, re.M | re.S)
     if not match:
         return False
-    credentials = [line.lower() for line in match.group(1).splitlines() if re.match(r'^\s*#\d+', line)]
-    return bool(credentials) and all(re.search(r'\brate-limited\s+usage_limit_reached\b', line) for line in credentials)
+    credentials = [line.lower().split('(', 1)[0] for line in match.group(1).splitlines()
+                   if re.match(r'^\s*#\d+', line)]
+    return bool(credentials) and all(re.search(r'\brate-limited\s+usage_limit_reached\b', line)
+                                     and not re.search(r'\b(?:healthy|available|ready)\b', line)
+                                     for line in credentials)
 
 
 def main(argv=None, now=None, runner=command):

@@ -46,6 +46,7 @@ class Circuit(unittest.TestCase):
     def test_credential_parser_rejects_historical_429_text(self):
         self.assertTrue(m.pool_exhausted('openai-codex (1 credentials):\n #1 oauth rate-limited usage_limit_reached (429)'))
         self.assertFalse(m.pool_exhausted('openai-codex (2 credentials):\n #1 healthy (previous rate-limited request)\n #2 oauth rate-limited usage_limit_reached (429)'))
+        self.assertFalse(m.pool_exhausted('openai-codex (1 credentials):\n #1 healthy (previous rate-limited usage_limit_reached 429)'))
         self.assertFalse(m.pool_exhausted('copilot (1 credentials):\n #1 healthy'))
 
     def _db(self, root):
@@ -85,7 +86,7 @@ class Circuit(unittest.TestCase):
         with TemporaryDirectory() as d:
             db=self._db(Path(d)); out=io.StringIO()
             with redirect_stdout(out):
-                rc=m.main(['--db',str(db)],now=NOW,runner=lambda *a:'openai-codex (1 credentials):\n #1 healthy (previous rate-limited request)')
+                rc=m.main(['--db',str(db)],now=NOW,runner=lambda *a:'openai-codex (1 credentials):\n #1 healthy (previous rate-limited usage_limit_reached 429)')
             self.assertEqual(rc,0)
             self.assertEqual(out.getvalue(),'')
 
